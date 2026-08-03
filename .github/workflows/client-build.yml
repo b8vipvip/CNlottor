@@ -1,0 +1,111 @@
+name: CNlottor Client Build
+
+on:
+  pull_request:
+    paths:
+      - "clients/cnlottor_app/**"
+      - "src/cnlottor/**"
+      - "pyproject.toml"
+      - ".github/workflows/client-build.yml"
+  push:
+    branches: [main, agent/cnlottor-v1-build]
+    paths:
+      - "clients/cnlottor_app/**"
+      - "src/cnlottor/**"
+      - "pyproject.toml"
+      - ".github/workflows/client-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Resolve Flutter packages
+        working-directory: clients/cnlottor_app
+        run: flutter pub get
+      - name: Analyze and test
+        working-directory: clients/cnlottor_app
+        run: |
+          flutter analyze
+          flutter test
+      - name: Build release APK
+        working-directory: clients/cnlottor_app
+        run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CNlottor-Android-APK
+          path: clients/cnlottor_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+      - name: Resolve Flutter packages
+        working-directory: clients/cnlottor_app
+        run: flutter pub get
+      - name: Analyze and test
+        working-directory: clients/cnlottor_app
+        run: |
+          flutter analyze
+          flutter test
+      - name: Build Windows release
+        working-directory: clients/cnlottor_app
+        run: flutter build windows --release
+      - name: Build server wheel
+        run: |
+          python -m pip install build
+          python -m build --wheel
+      - name: Assemble Windows bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package\app | Out-Null
+          New-Item -ItemType Directory -Force -Path package\server | Out-Null
+          Copy-Item -Recurse -Force clients\cnlottor_app\build\windows\x64\runner\Release\* package\app\
+          Copy-Item -Force dist\*.whl package\server\
+          Copy-Item -Force README.md package\README.md
+          @'
+          $ErrorActionPreference = "Stop"
+          $Root = $PSScriptRoot
+          $Python = Join-Path $Root ".venv\Scripts\python.exe"
+          if (-not (Test-Path $Python)) {
+              py -3.11 -m venv (Join-Path $Root ".venv")
+          }
+          $Wheel = (Get-ChildItem (Join-Path $Root "server\cnlottor-*.whl") | Select-Object -First 1).FullName
+          & $Python -m pip install --upgrade pip
+          & $Python -m pip install "${Wheel}[all]"
+          & $Python -m cnlottor.cli serve --host 0.0.0.0 --port 8000
+          '@ | Set-Content -Encoding UTF8 package\start_server.ps1
+          @'
+          1. Install Python 3.11 if it is not already installed.
+          2. Right-click start_server.ps1 and run with PowerShell.
+          3. Start app\cnlottor_app.exe.
+          4. The default API address is http://127.0.0.1:8000.
+          '@ | Set-Content -Encoding UTF8 package\使用说明.txt
+          Compress-Archive -Path package\* -DestinationPath CNlottor-Windows.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CNlottor-Windows
+          path: CNlottor-Windows.zip
+          if-no-files-found: error
