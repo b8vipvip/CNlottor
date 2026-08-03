@@ -1,3 +1,4 @@
+# The default-branch PR bootstrap supersedes this branch-local fallback.
 name: Bootstrap CNlottor v1 branch
 
 on:
