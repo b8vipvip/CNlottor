@@ -1,0 +1,8 @@
+[project]
+name = "cnlottor"
+version = "0.1.0"
+description = "Unified workspace for KittenCN lottery research projects"
+requires-python = ">=3.9"
+
+[project.scripts]
+cnlottor = "cnlottor:main"
