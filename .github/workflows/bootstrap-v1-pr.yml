@@ -23,12 +23,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
           token: ${{ github.token }}
-      - name: Merge latest main
+      - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git merge --no-edit origin/main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -66,17 +64,8 @@ jobs:
               "DropdownButtonFormField<String>(\n              key: ValueKey(selected),\n              initialValue: selected,",
           )
           client.write_text(text, encoding="utf-8", newline="\n")
-
-          workflow = Path(".github/workflows/model-ci.yml")
-          text = workflow.read_text(encoding="utf-8")
-          text = text.replace(
-              "python -m unittest tests.test_torch_model_service -v",
-              "python -m unittest discover -s tests -p 'test_torch_model_service.py' -v",
-          )
-          workflow.write_text(text, encoding="utf-8", newline="\n")
           PY
-          rm -f .github/workflows/bootstrap-v1-branch.yml
-          rm -f .github/workflows/bootstrap-v1-pr.yml
+          git restore --source=HEAD -- .github/workflows
       - name: Validate Python backend
         run: |
           python -m pip install -e ".[data,yaml,analysis,server,dev]"
@@ -88,8 +77,9 @@ jobs:
           flutter pub get
           flutter analyze
           flutter test
-      - name: Commit generated release
+      - name: Commit generated source
         run: |
+          rm -rf src/cnlottor.egg-info
           git add -A
           git commit -m "Build CNlottor v0.3 backend and clients"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
