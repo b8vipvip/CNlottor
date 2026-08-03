@@ -11,6 +11,7 @@ class LauncherTest(unittest.TestCase):
             [sys.executable, str(root / "cnlottor_cli.py"), "list"],
             cwd=root,
             text=True,
+            encoding="utf-8",
             capture_output=True,
             check=True,
         )
@@ -24,6 +25,7 @@ class LauncherTest(unittest.TestCase):
             [sys.executable, str(root / "cnlottor_cli.py"), "lotteries"],
             cwd=root,
             text=True,
+            encoding="utf-8",
             capture_output=True,
             check=True,
         )
