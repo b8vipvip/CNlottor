@@ -29,6 +29,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git merge --no-edit origin/main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -38,6 +41,21 @@ jobs:
           rm -rf clients/cnlottor_app
           flutter create --platforms=android,windows --org com.b8vipvip clients/cnlottor_app
           python scripts/bootstrap_v1.py
+          cat > src/cnlottor/analysis_engine/__init__.py <<'PY'
+          from .backtest import RollingBacktester, frequency_prediction, random_prediction, score_prediction
+          from .contracts import AnalysisStrategy
+          from .copula import CopulaConfig, GenericCopulaGenerator
+          from .rules import AssociationRuleAnalyzer
+          from .service import AnalysisService
+          from .statistics import co_occurrence_analysis, draw_shape_analysis, frequency_analysis
+
+          __all__ = [
+              "AnalysisStrategy", "AnalysisService", "frequency_analysis", "draw_shape_analysis",
+              "co_occurrence_analysis", "AssociationRuleAnalyzer", "CopulaConfig",
+              "GenericCopulaGenerator", "RollingBacktester", "frequency_prediction",
+              "random_prediction", "score_prediction",
+          ]
+          PY
           rm -f .github/workflows/bootstrap-v1-branch.yml
           rm -f .github/workflows/bootstrap-v1-pr.yml
       - name: Validate Python backend
