@@ -1,0 +1,7 @@
+code: ssq
+name: 双色球
+provider_code: ssq
+aliases: [double-color-ball]
+pools:
+  - {code: main, name: 红球, minimum: 1, maximum: 33, draw_count: 6, ordered: false, unique: true}
+  - {code: bonus, name: 蓝球, minimum: 1, maximum: 16, draw_count: 1, ordered: false, unique: true}

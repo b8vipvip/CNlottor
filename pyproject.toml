@@ -4,13 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cnlottor"
-version = "0.1.0"
-description = "Unified workspace for KittenCN lottery research projects"
+version = "0.2.0"
+description = "Unified data, modeling, analysis, and backtesting platform for Chinese lotteries"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+data = [
+  "requests>=2.31",
+  "beautifulsoup4>=4.12",
+  "lxml>=5.0",
+]
+yaml = ["PyYAML>=6.0"]
+dev = ["coverage>=7.0"]
 
 [project.scripts]
-cnlottor = "cnlottor:main"
+cnlottor = "cnlottor.cli:main"
 
 [tool.setuptools]
-py-modules = ["cnlottor"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
