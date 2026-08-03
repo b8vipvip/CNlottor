@@ -1,5 +1,5 @@
 # The default-branch PR bootstrap supersedes this branch-local fallback.
-# Retry marker: analysis exports fixed in the PR bootstrap workflow.
+# Retry marker: Flutter DropdownButtonFormField now uses initialValue.
 name: Bootstrap CNlottor v1 branch
 
 on:
