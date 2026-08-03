@@ -1,5 +1,5 @@
 # The default-branch PR bootstrap supersedes this branch-local fallback.
-# Retry marker: generated source is now pushed separately from workflow updates.
+# Retry marker: generated workflow files are removed before the source push.
 name: Bootstrap CNlottor v1 branch
 
 on:
@@ -17,10 +17,4 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/cnlottor-v1-build
-          fetch-depth: 0
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-      - name: Confirm PR-driven bootstrap
-        run: echo "Source generation is handled by the default-branch PR workflow."
+      - run: echo "Source generation is handled by the default-branch PR workflow."
