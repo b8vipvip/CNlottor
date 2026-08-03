@@ -1,71 +1,80 @@
 # CNlottor
 
-CNlottor 正在把 KittenCN 的三个彩票研究项目重构成一个统一平台：
+CNlottor 是一个统一的彩票数据研究平台，由三个 KittenCN 上游项目重构而来。平台将数据获取、PyTorch 训练预测、统计分析、规则挖掘、Gaussian Copula 候选生成、滚动回测和客户端界面整合为同一套数据协议。
 
-- `data_engine`：负责数据获取、解析、校验和存储；
-- `model_engine`：负责通用数据编码、训练、模型管理和预测；
-- `analysis_engine`：负责统计分析、规则挖掘、Copula、候选生成和回测；
-- `core`：统一定义彩票规则、开奖记录和跨引擎数据协议。
+> 本项目仅用于编程、统计与机器学习研究。彩票开奖结果具有随机性，任何模型、规则和回测结果都不构成中奖或收益承诺。
 
-项目仅用于编程、数据分析和机器学习研究，不构成投资或中奖承诺。
+## 支持的彩票
 
-## 当前重构状态
+- 双色球 `ssq`
+- 大乐透 `dlt`
+- 排列三 `pls`
+- 乐彩7星/七星彩 `qxc`
+- 福彩3D `sd`
+- 快乐8 `kl8`
 
-第一阶段已经建立新的统一基础：
+平台根据彩票结构自动选择处理方式：
 
-- 支持双色球、大乐透、排列三、七星彩、福彩3D、快乐8六种彩票规则；
-- 区分无序不重复号码池与有序可重复数字池；
-- 使用统一 `LotteryDraw` 数据模型；
-- 使用 SQLite 规范化保存开奖记录及号码位置；
-- 从原 TensorFlow 项目迁移 DataChart 数据抓取和解析能力；
-- 支持导入旧项目的 `data.csv`；
-- 模型层提供多标签和按位置分类两种统一编码；
-- 分析层已泛化频率、和值/跨度/奇偶和共现分析；
-- 原三个项目暂时保留在 `modules/`，用于迁移期间的行为对照。
+- 双色球、大乐透、快乐8使用无序集合、多标签输出和不重复号码校验；
+- 排列三、福彩3D、七星彩使用有序位置分类，保留位置和重复数字。
 
-## 新目录结构
+## 架构
 
 ```text
-CNlottor/
-├── src/cnlottor/
-│   ├── core/
-│   ├── data_engine/
-│   ├── model_engine/
-│   ├── analysis_engine/
-│   └── cli.py
-├── configs/lotteries/
-├── modules/                     # 迁移期间保留的三个上游项目
-├── data/
-├── tests/
-├── cnlottor_cli.py
-└── pyproject.toml
+src/cnlottor/
+├── core/              # 彩票规则、统一开奖记录、SQLite 数据仓库
+├── data_engine/       # 抓取、解析、标准化、校验与同步
+├── model_engine/      # 通用 PyTorch GRU、多任务输出头、训练与预测
+├── analysis_engine/   # 统计、规则、Copula、候选生成和滚动回测
+├── api/               # FastAPI 服务
+└── cli.py             # 统一命令行
+
+clients/cnlottor_app/  # Flutter Windows / Android 客户端
+modules/               # 保留的三个上游项目，用于来源追踪和行为对照
 ```
 
-## 安装
+更详细的设计见 `docs/ARCHITECTURE.md`。
 
-安装统一平台和在线数据依赖：
+## 安装服务端
+
+推荐 Python 3.11。
 
 ```bash
-python -m pip install -e ".[data,yaml]"
+python -m venv .venv
 ```
 
-## 统一命令
+Windows PowerShell：
 
-查看支持的彩票：
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[all]"
+```
+
+Linux/macOS：
+
+```bash
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[all]"
+```
+
+## 常用命令
+
+查看彩票定义：
 
 ```bash
 cnlottor lotteries
-# 或
-python cnlottor_cli.py lotteries
 ```
 
-初始化统一数据库：
+初始化数据库并同步全部彩票：
 
 ```bash
 cnlottor init-db
+cnlottor sync --lottery all
 ```
 
-从旧模块 CSV 导入数据：
+也可以导入上游项目已有的 CSV：
 
 ```bash
 cnlottor import-legacy \
@@ -73,36 +82,112 @@ cnlottor import-legacy \
   --csv modules/predict_tensorflow/data/ssq/data.csv
 ```
 
-在线同步数据：
+运行全部分析：
 
 ```bash
-cnlottor sync --lottery pls
-cnlottor sync --lottery kl8 --start-issue 2025001 --end-issue 2025100
+cnlottor analyze --lottery all --strategy all
 ```
 
-运行通用分析：
+单独运行规则或 Copula：
 
 ```bash
-cnlottor analyze --lottery ssq --strategy all
-cnlottor analyze --lottery pls --strategy frequency
+cnlottor analyze --lottery ssq --strategy rules
+cnlottor analyze --lottery pls --strategy copula
 ```
+
+训练与预测：
+
+```bash
+cnlottor train --lottery ssq --epochs 20 --window-size 12
+cnlottor predict --lottery ssq
+```
+
+六种彩票依次训练：
+
+```bash
+cnlottor train --lottery all --epochs 20
+```
+
+滚动回测并与随机选号基线比较：
+
+```bash
+cnlottor backtest --lottery all --window 60
+```
+
+## 启动 API 服务
+
+```bash
+cnlottor serve --host 0.0.0.0 --port 8000
+```
+
+或：
+
+```bash
+cnlottor-server
+```
+
+主要接口：
+
+```text
+GET  /health
+GET  /lotteries
+GET  /draws/{lottery_code}
+POST /sync/{lottery_code}
+GET  /analysis/{lottery_code}?strategy=frequency|draw-shape|co-occurrence|rules|copula
+POST /train/{lottery_code}
+GET  /predict/{lottery_code}
+GET  /backtest/{lottery_code}
+```
+
+## Windows 客户端
+
+GitHub Actions 的 `CNlottor Client Build` 工作流会生成 `CNlottor-Windows.zip`。解压后运行客户端可执行文件，默认连接：
+
+```text
+http://127.0.0.1:8000
+```
+
+先在本机启动 Python 服务端即可。`tools/windows/start_server.ps1` 可以自动创建虚拟环境、安装依赖并启动服务。
+
+## Android 客户端
+
+同一工作流会生成 `CNlottor-Android-APK`。Android 客户端是 API 客户端，不在手机内训练 PyTorch 模型。服务端可运行在：
+
+- 同一局域网中的 Windows 电脑；
+- VPS 或云服务器；
+- Android 模拟器可访问的开发机地址。
+
+在客户端顶部填写服务端地址，例如：
+
+```text
+http://192.168.1.20:8000
+```
+
+生产部署建议使用 HTTPS，不要把训练接口直接暴露到不可信公网。
+
+## 自动化验证
+
+仓库包含三类 GitHub Actions：
+
+- `CNlottor Backend CI`：Windows、Ubuntu 后端安装、CLI、API和分析测试；
+- `CNlottor PyTorch CI`：CPU PyTorch 训练、保存、加载和预测测试；
+- `CNlottor Client Build`：Flutter analyze/test，并构建 Android APK 和 Windows ZIP。
+
+高级分析测试会覆盖全部六种彩票；PyTorch 专项测试同时覆盖无序集合型和有序数字型彩票。
 
 ## 旧模块兼容入口
 
-迁移完成前仍可运行旧项目：
+重构期间仍可运行上游模块：
 
 ```bash
 python cnlottor_cli.py list
-python cnlottor_cli.py install pytorch
 python cnlottor_cli.py exec tensorflow -- python scripts/get_data.py --help
 python cnlottor_cli.py exec pytorch -- python scripts/train_model.py --help
 python cnlottor_cli.py exec kl8 -- python scripts/get_data.py --help
 ```
 
-## 下一阶段
-
-接下来会将 PyTorch 项目的 Transformer/LSTM 训练器迁入 `model_engine`，使其只读取统一 SQLite 数据；随后参数化迁移规则挖掘、特征增强、Copula 和滚动回测，删除其中写死的 `80选20` 假设。
+新代码不再依赖这些旧入口。它们主要用于来源追踪、许可证保留和结果对照。
 
 ## 许可证
 
-本仓库包含 GPL-3.0 和 MIT 上游代码。迁移期间继续保留全部上游版权、许可证和来源记录，详情见 `THIRD_PARTY_NOTICES.md`、`SOURCES.md` 及各模块原始文件。
+仓库包含 GPL-3.0 和 MIT 上游代码。请保留 `THIRD_PARTY_NOTICES.md`、`SOURCES.md`、`LICENSES/` 以及各模块中的原始版权和许可证文件。
