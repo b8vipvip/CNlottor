@@ -7,9 +7,15 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from cnlottor.analysis_engine import AnalysisService
+from cnlottor.analysis_engine import (
+    AnalysisService,
+    AssociationRuleAnalyzer,
+    GenericCopulaGenerator,
+    RollingBacktester,
+)
 from cnlottor.core import DEFAULT_REGISTRY, SQLiteDrawStore
 from cnlottor.data_engine import DataChart500Provider, DataSyncService, import_legacy_csv
+from cnlottor.model_engine import TorchModelService, TrainConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULES = {
@@ -18,6 +24,8 @@ MODULES = {
     "kl8": ROOT / "modules" / "kl8_analyzer",
 }
 DEFAULT_DATABASE = ROOT / "data" / "cnlottor.db"
+DEFAULT_MODELS = ROOT / "artifacts" / "models"
+LOTTERY_CHOICES = (*DEFAULT_REGISTRY.codes(), "all")
 
 
 def _configure_utf8_stdio() -> None:
@@ -30,6 +38,14 @@ def _configure_utf8_stdio() -> None:
                 reconfigure(encoding="utf-8")
             except (OSError, ValueError):
                 pass
+
+
+def _json(value: object) -> None:
+    print(json.dumps(value, ensure_ascii=False, default=str, indent=2))
+
+
+def _codes(value: str) -> tuple[str, ...]:
+    return DEFAULT_REGISTRY.codes() if value == "all" else (DEFAULT_REGISTRY.get(value).code,)
 
 
 def module_path(name: str) -> Path:
@@ -86,6 +102,13 @@ def _store(path: str) -> SQLiteDrawStore:
     return SQLiteDrawStore(Path(path))
 
 
+def _history(store: SQLiteDrawStore, code: str):
+    draws = store.load_draws(code, ascending=True)
+    if not draws:
+        raise SystemExit(f"No stored draws found for {code}; run sync or import-legacy first")
+    return draws
+
+
 def cmd_init_db(args: argparse.Namespace) -> int:
     store = _store(args.database)
     print(store.database)
@@ -96,50 +119,133 @@ def cmd_import_legacy(args: argparse.Namespace) -> int:
     spec = DEFAULT_REGISTRY.get(args.lottery)
     draws = import_legacy_csv(spec, args.csv)
     stored = _store(args.database).upsert_draws(spec, draws)
-    print(
-        json.dumps(
-            {"lottery": spec.code, "imported": len(draws), "stored": stored},
-            ensure_ascii=False,
-        )
-    )
+    _json({"lottery": spec.code, "imported": len(draws), "stored": stored})
     return 0
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
-    report = DataSyncService(
-        _store(args.database),
-        DataChart500Provider(),
-    ).sync(
-        args.lottery,
-        start_issue=args.start_issue,
-        end_issue=args.end_issue,
-    )
-    print(json.dumps(asdict(report), ensure_ascii=False, default=str))
+    service = DataSyncService(_store(args.database), DataChart500Provider())
+    reports = []
+    for code in _codes(args.lottery):
+        reports.append(
+            asdict(
+                service.sync(
+                    code,
+                    start_issue=args.start_issue,
+                    end_issue=args.end_issue,
+                )
+            )
+        )
+    _json(reports)
     return 0
+
+
+def _analyze_one(strategy: str, spec, draws):
+    if strategy == "rules":
+        return AssociationRuleAnalyzer().analyze(spec, draws)
+    if strategy == "copula":
+        return GenericCopulaGenerator().analyze(spec, draws)
+    return AnalysisService().run(strategy, spec, draws)
 
 
 def cmd_analyze(args: argparse.Namespace) -> int:
-    spec = DEFAULT_REGISTRY.get(args.lottery)
-    draws = _store(args.database).load_draws(spec.code, ascending=True)
-    if not draws:
-        raise SystemExit(
-            f"No stored draws found for {spec.code}; run sync or import-legacy first"
+    store = _store(args.database)
+    output = []
+    for code in _codes(args.lottery):
+        spec = DEFAULT_REGISTRY.get(code)
+        draws = _history(store, code)
+        strategies = (
+            ("frequency", "draw-shape", "co-occurrence", "rules", "copula")
+            if args.strategy == "all"
+            else (args.strategy,)
         )
-    service = AnalysisService()
-    results = (
-        service.run_all(spec, draws)
-        if args.strategy == "all"
-        else [service.run(args.strategy, spec, draws)]
+        for strategy in strategies:
+            try:
+                output.append(asdict(_analyze_one(strategy, spec, draws)))
+            except ValueError as exc:
+                output.append(
+                    {
+                        "lottery_code": code,
+                        "strategy": strategy,
+                        "skipped": True,
+                        "reason": str(exc),
+                    }
+                )
+    _json(output)
+    return 0
+
+
+def cmd_train(args: argparse.Namespace) -> int:
+    store = _store(args.database)
+    service = TorchModelService(args.models)
+    reports = []
+    config = TrainConfig(
+        window_size=args.window_size,
+        epochs=args.epochs,
+        hidden_size=args.hidden_size,
+        num_layers=args.num_layers,
+        learning_rate=args.learning_rate,
+        validation_ratio=args.validation_ratio,
+        seed=args.seed,
     )
-    print(
-        json.dumps(
-            [asdict(result) for result in results],
-            ensure_ascii=False,
-            default=str,
-            indent=2,
+    for code in _codes(args.lottery):
+        spec = DEFAULT_REGISTRY.get(code)
+        reports.append(asdict(service.train(spec, _history(store, code), config)))
+    _json(reports)
+    return 0
+
+
+def cmd_predict(args: argparse.Namespace) -> int:
+    store = _store(args.database)
+    service = TorchModelService(args.models)
+    results = []
+    for code in _codes(args.lottery):
+        spec = DEFAULT_REGISTRY.get(code)
+        results.append(asdict(service.predict(spec, _history(store, code))))
+    _json(results)
+    return 0
+
+
+def cmd_backtest(args: argparse.Namespace) -> int:
+    store = _store(args.database)
+    backtester = RollingBacktester()
+    results = []
+    for code in _codes(args.lottery):
+        spec = DEFAULT_REGISTRY.get(code)
+        results.append(
+            asdict(
+                backtester.run(
+                    spec,
+                    _history(store, code),
+                    window=args.window,
+                    seed=args.seed,
+                )
+            )
         )
+    _json(results)
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise SystemExit("Install CNlottor with the server extra") from exc
+
+    from cnlottor.api.app import create_app
+
+    uvicorn.run(
+        create_app(args.database, args.models),
+        host=args.host,
+        port=args.port,
+        reload=False,
     )
     return 0
+
+
+def _add_lottery_argument(parser: argparse.ArgumentParser, *, allow_all: bool = True) -> None:
+    choices = LOTTERY_CHOICES if allow_all else DEFAULT_REGISTRY.codes()
+    parser.add_argument("--lottery", required=True, choices=choices)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -178,9 +284,7 @@ def build_parser() -> argparse.ArgumentParser:
     import_parser = subparsers.add_parser(
         "import-legacy", help="Import an existing legacy data.csv"
     )
-    import_parser.add_argument(
-        "--lottery", required=True, choices=DEFAULT_REGISTRY.codes()
-    )
+    _add_lottery_argument(import_parser, allow_all=False)
     import_parser.add_argument("--csv", required=True)
     import_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
     import_parser.set_defaults(func=cmd_import_legacy)
@@ -188,27 +292,71 @@ def build_parser() -> argparse.ArgumentParser:
     sync_parser = subparsers.add_parser(
         "sync", help="Fetch and store lottery history"
     )
-    sync_parser.add_argument(
-        "--lottery", required=True, choices=DEFAULT_REGISTRY.codes()
-    )
+    _add_lottery_argument(sync_parser)
     sync_parser.add_argument("--start-issue")
     sync_parser.add_argument("--end-issue")
     sync_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
     sync_parser.set_defaults(func=cmd_sync)
 
     analyze_parser = subparsers.add_parser(
-        "analyze", help="Run generic analysis on stored draws"
+        "analyze", help="Run statistical, rule and Copula analysis"
     )
-    analyze_parser.add_argument(
-        "--lottery", required=True, choices=DEFAULT_REGISTRY.codes()
-    )
+    _add_lottery_argument(analyze_parser)
     analyze_parser.add_argument(
         "--strategy",
         default="all",
-        choices=("all", "frequency", "draw-shape", "co-occurrence"),
+        choices=(
+            "all",
+            "frequency",
+            "draw-shape",
+            "co-occurrence",
+            "rules",
+            "copula",
+        ),
     )
     analyze_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
     analyze_parser.set_defaults(func=cmd_analyze)
+
+    train_parser = subparsers.add_parser(
+        "train", help="Train the generic PyTorch sequence model"
+    )
+    _add_lottery_argument(train_parser)
+    train_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
+    train_parser.add_argument("--models", default=str(DEFAULT_MODELS))
+    train_parser.add_argument("--window-size", type=int, default=12)
+    train_parser.add_argument("--epochs", type=int, default=20)
+    train_parser.add_argument("--hidden-size", type=int, default=64)
+    train_parser.add_argument("--num-layers", type=int, default=1)
+    train_parser.add_argument("--learning-rate", type=float, default=1e-3)
+    train_parser.add_argument("--validation-ratio", type=float, default=0.2)
+    train_parser.add_argument("--seed", type=int, default=42)
+    train_parser.set_defaults(func=cmd_train)
+
+    predict_parser = subparsers.add_parser(
+        "predict", help="Predict with the latest trained checkpoint"
+    )
+    _add_lottery_argument(predict_parser)
+    predict_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
+    predict_parser.add_argument("--models", default=str(DEFAULT_MODELS))
+    predict_parser.set_defaults(func=cmd_predict)
+
+    backtest_parser = subparsers.add_parser(
+        "backtest", help="Run rolling backtests against a random baseline"
+    )
+    _add_lottery_argument(backtest_parser)
+    backtest_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
+    backtest_parser.add_argument("--window", type=int, default=60)
+    backtest_parser.add_argument("--seed", type=int, default=42)
+    backtest_parser.set_defaults(func=cmd_backtest)
+
+    serve_parser = subparsers.add_parser(
+        "serve", help="Start the FastAPI service for Windows and Android clients"
+    )
+    serve_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
+    serve_parser.add_argument("--models", default=str(DEFAULT_MODELS))
+    serve_parser.add_argument("--host", default="0.0.0.0")
+    serve_parser.add_argument("--port", type=int, default=8000)
+    serve_parser.set_defaults(func=cmd_serve)
 
     return parser
 
