@@ -1,0 +1,65 @@
+name: Develop CNlottor v1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/bootstrap_v1.py
+      - .github/workflows/develop-v1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: develop-cnlottor-v1
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Create development branch
+        run: |
+          git switch -c agent/cnlottor-v1
+          rm -rf clients/cnlottor_app
+          flutter create --platforms=android,windows --org com.b8vipvip clients/cnlottor_app
+      - name: Generate backend, clients and workflows
+        run: python scripts/bootstrap_v1.py
+      - name: Validate Python backend without PyTorch
+        run: |
+          python -m pip install -e ".[data,yaml,analysis,server,dev]"
+          python -m unittest discover -s tests -v
+          python -m compileall -q src
+      - name: Validate Flutter client
+        working-directory: clients/cnlottor_app
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+      - name: Commit and push version branch
+        run: |
+          git add -A
+          git commit -m "Build CNlottor v0.3 backend and cross-platform clients"
+          git push --force-with-lease origin agent/cnlottor-v1
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create \
+            --base main \
+            --head agent/cnlottor-v1 \
+            --title "Build CNlottor v0.3 first usable release" \
+            --body "Automated first-version integration: generic PyTorch training and prediction, all-lottery rule mining, Gaussian Copula generation, rolling backtesting with random baselines, FastAPI service, Flutter Windows/Android clients, and dedicated CI/build workflows. The one-shot generator removes itself from the resulting branch."
