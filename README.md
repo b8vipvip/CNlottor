@@ -12,11 +12,28 @@ CNlottor 将 KittenCN 的三个彩票数据研究项目聚合在一个仓库中�
 
 ## 统一入口
 
+直接使用：
+
 ```bash
 python cnlottor.py list
 python cnlottor.py install pytorch
+
+python cnlottor.py exec tensorflow -- python scripts/get_data.py --help
+python cnlottor.py exec tensorflow -- python scripts/train.py --help
+python cnlottor.py exec tensorflow -- python scripts/predict.py --help
+
 python cnlottor.py exec pytorch -- python scripts/get_data.py --help
-python cnlottor.py exec tensorflow -- python main.py --help
+python cnlottor.py exec pytorch -- python scripts/train_model.py --help
+python cnlottor.py exec pytorch -- python scripts/predict.py --help
+
+python cnlottor.py exec kl8 -- python scripts/get_data.py --help
+```
+
+也可以把根目录工具安装成命令：
+
+```bash
+python -m pip install -e .
+cnlottor list
 ```
 
 `exec` 命令只负责切换到对应模块目录并执行原项目命令，因此各模块仍可按照自己的 README 独立使用，避免强行混合不同框架的依赖和数据格式。
