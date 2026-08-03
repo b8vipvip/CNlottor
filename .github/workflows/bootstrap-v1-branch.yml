@@ -1,5 +1,5 @@
 # The default-branch PR bootstrap supersedes this branch-local fallback.
-# Retry marker: Flutter DropdownButtonFormField now uses initialValue.
+# Retry marker: generated source is now pushed separately from workflow updates.
 name: Bootstrap CNlottor v1 branch
 
 on:
@@ -22,25 +22,5 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Generate Flutter platforms and v1 code
-        run: |
-          rm -rf clients/cnlottor_app
-          flutter create --platforms=android,windows --org com.b8vipvip clients/cnlottor_app
-          python scripts/bootstrap_v1.py
-          rm -f .github/workflows/bootstrap-v1-branch.yml
-      - name: Validate generated source
-        run: |
-          python -m pip install -e ".[data,yaml,analysis,server,dev]"
-          python -m unittest discover -s tests -v
-          python -m compileall -q src
-          cd clients/cnlottor_app
-          flutter pub get
-          flutter analyze
-          flutter test
-      - name: Push generated version
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Build CNlottor v0.3 backend and clients"
-          git push origin HEAD:agent/cnlottor-v1-build
+      - name: Confirm PR-driven bootstrap
+        run: echo "Source generation is handled by the default-branch PR workflow."
