@@ -1,0 +1,6 @@
+code: pls
+name: 排列三
+provider_code: pls
+aliases: [pl3]
+pools:
+  - {code: digits, name: 开奖号码, minimum: 0, maximum: 9, draw_count: 3, ordered: true, unique: false}
