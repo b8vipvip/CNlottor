@@ -1,0 +1,20 @@
+torch
+tensorboard
+pytorch-gpu
+pytorch-crf
+requests
+keras
+beautifulsoup4
+pandas
+lxml
+loguru
+grpcio
+protobuf
+prefetch_generator
+scipy
+tqdm
+# for intel cpu
+# intel_numpy
+mkl
+# for other cpu
+numpy
