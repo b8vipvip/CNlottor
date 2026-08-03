@@ -20,6 +20,18 @@ MODULES = {
 DEFAULT_DATABASE = ROOT / "data" / "cnlottor.db"
 
 
+def _configure_utf8_stdio() -> None:
+    """Use UTF-8 for Chinese CLI output on Windows and other legacy consoles."""
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8")
+            except (OSError, ValueError):
+                pass
+
+
 def module_path(name: str) -> Path:
     path = MODULES[name]
     if not path.is_dir():
@@ -84,7 +96,12 @@ def cmd_import_legacy(args: argparse.Namespace) -> int:
     spec = DEFAULT_REGISTRY.get(args.lottery)
     draws = import_legacy_csv(spec, args.csv)
     stored = _store(args.database).upsert_draws(spec, draws)
-    print(json.dumps({"lottery": spec.code, "imported": len(draws), "stored": stored}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {"lottery": spec.code, "imported": len(draws), "stored": stored},
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 
@@ -105,51 +122,86 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     spec = DEFAULT_REGISTRY.get(args.lottery)
     draws = _store(args.database).load_draws(spec.code, ascending=True)
     if not draws:
-        raise SystemExit(f"No stored draws found for {spec.code}; run sync or import-legacy first")
+        raise SystemExit(
+            f"No stored draws found for {spec.code}; run sync or import-legacy first"
+        )
     service = AnalysisService()
-    results = service.run_all(spec, draws) if args.strategy == "all" else [service.run(args.strategy, spec, draws)]
-    print(json.dumps([asdict(result) for result in results], ensure_ascii=False, default=str, indent=2))
+    results = (
+        service.run_all(spec, draws)
+        if args.strategy == "all"
+        else [service.run(args.strategy, spec, draws)]
+    )
+    print(
+        json.dumps(
+            [asdict(result) for result in results],
+            ensure_ascii=False,
+            default=str,
+            indent=2,
+        )
+    )
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CNlottor unified lottery research platform")
+    parser = argparse.ArgumentParser(
+        description="CNlottor unified lottery research platform"
+    )
     subparsers = parser.add_subparsers(dest="action", required=True)
 
     list_parser = subparsers.add_parser("list", help="List legacy imported modules")
     list_parser.set_defaults(func=cmd_list)
 
-    lotteries_parser = subparsers.add_parser("lotteries", help="List unified lottery definitions")
+    lotteries_parser = subparsers.add_parser(
+        "lotteries", help="List unified lottery definitions"
+    )
     lotteries_parser.set_defaults(func=cmd_lotteries)
 
-    install_parser = subparsers.add_parser("install", help="Install a legacy module's requirements")
+    install_parser = subparsers.add_parser(
+        "install", help="Install a legacy module's requirements"
+    )
     install_parser.add_argument("module", choices=MODULES)
     install_parser.set_defaults(func=cmd_install)
 
-    exec_parser = subparsers.add_parser("exec", help="Run a command inside a legacy module directory")
+    exec_parser = subparsers.add_parser(
+        "exec", help="Run a command inside a legacy module directory"
+    )
     exec_parser.add_argument("module", choices=MODULES)
     exec_parser.add_argument("command", nargs=argparse.REMAINDER)
     exec_parser.set_defaults(func=cmd_exec)
 
-    init_parser = subparsers.add_parser("init-db", help="Initialize the unified SQLite database")
+    init_parser = subparsers.add_parser(
+        "init-db", help="Initialize the unified SQLite database"
+    )
     init_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
     init_parser.set_defaults(func=cmd_init_db)
 
-    import_parser = subparsers.add_parser("import-legacy", help="Import an existing legacy data.csv")
-    import_parser.add_argument("--lottery", required=True, choices=DEFAULT_REGISTRY.codes())
+    import_parser = subparsers.add_parser(
+        "import-legacy", help="Import an existing legacy data.csv"
+    )
+    import_parser.add_argument(
+        "--lottery", required=True, choices=DEFAULT_REGISTRY.codes()
+    )
     import_parser.add_argument("--csv", required=True)
     import_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
     import_parser.set_defaults(func=cmd_import_legacy)
 
-    sync_parser = subparsers.add_parser("sync", help="Fetch and store lottery history")
-    sync_parser.add_argument("--lottery", required=True, choices=DEFAULT_REGISTRY.codes())
+    sync_parser = subparsers.add_parser(
+        "sync", help="Fetch and store lottery history"
+    )
+    sync_parser.add_argument(
+        "--lottery", required=True, choices=DEFAULT_REGISTRY.codes()
+    )
     sync_parser.add_argument("--start-issue")
     sync_parser.add_argument("--end-issue")
     sync_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
     sync_parser.set_defaults(func=cmd_sync)
 
-    analyze_parser = subparsers.add_parser("analyze", help="Run generic analysis on stored draws")
-    analyze_parser.add_argument("--lottery", required=True, choices=DEFAULT_REGISTRY.codes())
+    analyze_parser = subparsers.add_parser(
+        "analyze", help="Run generic analysis on stored draws"
+    )
+    analyze_parser.add_argument(
+        "--lottery", required=True, choices=DEFAULT_REGISTRY.codes()
+    )
     analyze_parser.add_argument(
         "--strategy",
         default="all",
@@ -162,6 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    _configure_utf8_stdio()
     args = build_parser().parse_args()
     return int(args.func(args))
 
