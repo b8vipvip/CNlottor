@@ -1,0 +1,6 @@
+code: kl8
+name: 快乐8
+provider_code: kl8
+aliases: [happy8]
+pools:
+  - {code: main, name: 开奖号码, minimum: 1, maximum: 80, draw_count: 20, ordered: false, unique: true}
