@@ -1,15 +1,15 @@
-name: CNlottor CI
+name: CNlottor Backend CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, agent/cnlottor-v1-build]
 
 permissions:
   contents: read
 
 jobs:
-  integration:
+  backend:
     strategy:
       fail-fast: false
       matrix:
@@ -25,22 +25,27 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install unified platform
-        run: python -m pip install -e ".[data,yaml]"
+      - name: Install backend dependencies
+        run: python -m pip install -e ".[data,yaml,analysis,server,dev]"
 
       - name: Verify unified CLI
         run: |
           cnlottor lotteries
-          python cnlottor_cli.py lotteries
+          cnlottor --help
+          cnlottor analyze --help
+          cnlottor train --help
+          cnlottor predict --help
+          cnlottor backtest --help
+          cnlottor serve --help
           python cnlottor_cli.py list
 
-      - name: Run unit and integration tests
+      - name: Run backend tests
         run: python -m unittest discover -s tests -v
 
       - name: Compile unified Python sources
         run: |
           python -m compileall -q src
-          python -m py_compile cnlottor_cli.py tests/test_launcher.py
+          python -m py_compile cnlottor_cli.py
 
       - name: Compile legacy modules except known upstream-invalid script
         if: runner.os == 'Linux'
@@ -50,33 +55,32 @@ jobs:
           from pathlib import Path
           import py_compile
 
-          excluded = {
-              Path("modules/kl8_analyzer/src/analysis/kl8_analysis_plus.py"),
-          }
-          roots = [
+          excluded = {Path("modules/kl8_analyzer/src/analysis/kl8_analysis_plus.py")}
+          for root in (
               Path("modules/predict_tensorflow"),
               Path("modules/predict_pytorch"),
               Path("modules/kl8_analyzer"),
-          ]
-          for root in roots:
+          ):
               for path in root.rglob("*.py"):
-                  if path in excluded:
-                      continue
-                  py_compile.compile(str(path), doraise=True)
+                  if path not in excluded:
+                      py_compile.compile(str(path), doraise=True)
           PY
 
-      - name: Verify imported structure and notices
+      - name: Verify platform structure and notices
         shell: bash
         run: |
-          test -f modules/predict_tensorflow/README.md
           test -f modules/predict_tensorflow/LICENSE
-          test -f modules/predict_pytorch/README.md
           test -f modules/predict_pytorch/setup.py
-          test -f modules/kl8_analyzer/README.md
           test -f modules/kl8_analyzer/LICENSE
           test -f LICENSES/predict_Lottery_ticket-GPL-3.0.txt
           test -f LICENSES/kl8-lottery-analyzer-MIT.txt
           test -f SOURCES.md
           test -f THIRD_PARTY_NOTICES.md
           test -f configs/lotteries/ssq.yaml
+          test -f configs/lotteries/dlt.yaml
+          test -f configs/lotteries/pls.yaml
+          test -f configs/lotteries/qxc.yaml
+          test -f configs/lotteries/sd.yaml
           test -f configs/lotteries/kl8.yaml
+          test -f clients/cnlottor_app/pubspec.yaml
+          test -f docs/ARCHITECTURE.md
