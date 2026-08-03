@@ -1,0 +1,6 @@
+code: sd
+name: 福彩3D
+provider_code: sd
+aliases: [fc3d, 3d]
+pools:
+  - {code: digits, name: 开奖号码, minimum: 0, maximum: 9, draw_count: 3, ordered: true, unique: false}
