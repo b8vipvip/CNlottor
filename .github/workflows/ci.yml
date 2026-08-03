@@ -10,7 +10,11 @@ permissions:
 
 jobs:
   integration:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11"]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -18,27 +22,34 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
-      - name: Install unified launcher
-        run: python -m pip install -e .
+      - name: Install unified platform
+        run: python -m pip install -e ".[data,yaml]"
 
-      - name: Verify unified launcher
+      - name: Verify unified CLI
         run: |
-          cnlottor list
-          python cnlottor.py list
+          cnlottor lotteries
+          python cnlottor_cli.py lotteries
+          python cnlottor_cli.py list
 
-      - name: Run integration tests
+      - name: Run unit and integration tests
         run: python -m unittest discover -s tests -v
 
-      - name: Compile Python sources
+      - name: Compile unified Python sources
         run: |
-          python -m py_compile cnlottor.py tests/test_launcher.py
+          python -m compileall -q src
+          python -m py_compile cnlottor_cli.py tests/test_launcher.py
+
+      - name: Compile legacy modules
+        if: runner.os == 'Linux'
+        run: |
           python -m compileall -q modules/predict_tensorflow
           python -m compileall -q modules/predict_pytorch
           python -m compileall -q modules/kl8_analyzer
 
       - name: Verify imported structure and notices
+        shell: bash
         run: |
           test -f modules/predict_tensorflow/README.md
           test -f modules/predict_tensorflow/LICENSE
@@ -50,3 +61,5 @@ jobs:
           test -f LICENSES/kl8-lottery-analyzer-MIT.txt
           test -f SOURCES.md
           test -f THIRD_PARTY_NOTICES.md
+          test -f configs/lotteries/ssq.yaml
+          test -f configs/lotteries/kl8.yaml
