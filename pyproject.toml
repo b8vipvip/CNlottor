@@ -1,8 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "cnlottor"
 version = "0.1.0"
 description = "Unified workspace for KittenCN lottery research projects"
+readme = "README.md"
 requires-python = ">=3.9"
 
 [project.scripts]
 cnlottor = "cnlottor:main"
+
+[tool.setuptools]
+py-modules = ["cnlottor"]
