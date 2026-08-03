@@ -1,0 +1,39 @@
+name: CNlottor PyTorch CI
+
+on:
+  pull_request:
+    paths:
+      - "src/cnlottor/model_engine/**"
+      - "tests/test_torch_model_service.py"
+      - "pyproject.toml"
+      - ".github/workflows/model-ci.yml"
+  push:
+    branches: [main, agent/cnlottor-v1-build]
+    paths:
+      - "src/cnlottor/model_engine/**"
+      - "tests/test_torch_model_service.py"
+      - "pyproject.toml"
+      - ".github/workflows/model-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytorch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU PyTorch
+        run: python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - name: Install model package
+        run: |
+          python -m pip install numpy
+          python -m pip install -e . --no-deps
+      - name: Train, save, load and predict
+        run: python -m unittest discover -s tests -p "test_torch_model_service.py" -v
+      - name: Compile model engine
+        run: python -m compileall -q src/cnlottor/model_engine
