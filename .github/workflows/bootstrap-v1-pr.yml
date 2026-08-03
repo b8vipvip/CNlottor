@@ -56,6 +56,25 @@ jobs:
               "random_prediction", "score_prediction",
           ]
           PY
+          python - <<'PY'
+          from pathlib import Path
+
+          client = Path("clients/cnlottor_app/lib/main.dart")
+          text = client.read_text(encoding="utf-8")
+          text = text.replace(
+              "DropdownButtonFormField<String>(\n              value: selected,",
+              "DropdownButtonFormField<String>(\n              key: ValueKey(selected),\n              initialValue: selected,",
+          )
+          client.write_text(text, encoding="utf-8", newline="\n")
+
+          workflow = Path(".github/workflows/model-ci.yml")
+          text = workflow.read_text(encoding="utf-8")
+          text = text.replace(
+              "python -m unittest tests.test_torch_model_service -v",
+              "python -m unittest discover -s tests -p 'test_torch_model_service.py' -v",
+          )
+          workflow.write_text(text, encoding="utf-8", newline="\n")
+          PY
           rm -f .github/workflows/bootstrap-v1-branch.yml
           rm -f .github/workflows/bootstrap-v1-pr.yml
       - name: Validate Python backend
