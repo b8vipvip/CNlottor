@@ -1,5 +1,6 @@
 code: qxc
-name: 七星彩
+name: 乐彩7星
 provider_code: qxc
 pools:
-  - {code: digits, name: 开奖号码, minimum: 0, maximum: 9, draw_count: 7, ordered: true, unique: false}
+  - {code: main, name: 基本号码, minimum: 0, maximum: 9, draw_count: 6, ordered: true, unique: false}
+  - {code: bonus, name: 特别号码, minimum: 0, maximum: 14, draw_count: 1, ordered: false, unique: true}
