@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from cnlottor.core.lottery_spec import LotterySpec
 
 from .base import LotteryProvider, RawDraw
+from .cwl_official import ChinaWelfareLotteryProvider
+from .datachart500 import DataChart500Provider, HttpSettings
 
 
 class CompositeLotteryProvider:
@@ -47,3 +49,20 @@ class CompositeLotteryProvider:
 
     def get_latest_issue(self, spec: LotterySpec) -> str | None:
         return self.provider_for(spec).get_latest_issue(spec)
+
+
+def build_default_provider(
+    settings: HttpSettings = HttpSettings(),
+) -> CompositeLotteryProvider:
+    welfare = ChinaWelfareLotteryProvider(settings)
+    datachart = DataChart500Provider(settings)
+    return CompositeLotteryProvider(
+        {
+            "ssq": welfare,
+            "sd": welfare,
+            "kl8": welfare,
+            "dlt": datachart,
+            "pls": datachart,
+            "qxc": datachart,
+        }
+    )
