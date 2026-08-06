@@ -5,10 +5,8 @@ from dataclasses import asdict
 
 from cnlottor.core import DEFAULT_REGISTRY
 from cnlottor.data_engine import (
-    ChinaWelfareLotteryProvider,
-    CompositeLotteryProvider,
-    DataChart500Provider,
     HttpSettings,
+    build_default_provider,
     normalize_raw_draw,
     validate_draw_sequence,
 )
@@ -16,26 +14,12 @@ from cnlottor.data_engine import (
 
 def main() -> int:
     settings = HttpSettings(timeout=30, retries=2, history_limit=5)
-    welfare = ChinaWelfareLotteryProvider(
-        settings,
-        page_size=5,
-        max_pages=1,
-    )
-    datachart = DataChart500Provider(settings)
-    provider = CompositeLotteryProvider(
-        {
-            "ssq": welfare,
-            "sd": welfare,
-            "kl8": welfare,
-            "dlt": datachart,
-            "pls": datachart,
-            "qxc": datachart,
-        }
-    )
+    provider = build_default_provider(settings)
 
     reports = []
     failures = []
     for spec in DEFAULT_REGISTRY.all():
+        routed = provider.provider_for(spec)
         try:
             raw = provider.fetch_draws(spec)
             normalized = [normalize_raw_draw(spec, item) for item in raw]
@@ -45,7 +29,8 @@ def main() -> int:
             reports.append(
                 {
                     "lottery_code": spec.code,
-                    "provider": provider.provider_for(spec).name,
+                    "provider_route": routed.name,
+                    "source_used": validated[0].source,
                     "draws": len(validated),
                     "latest_issue": max(draw.issue for draw in validated),
                     "sample": asdict(validated[0]),
@@ -55,7 +40,7 @@ def main() -> int:
             failures.append(
                 {
                     "lottery_code": spec.code,
-                    "provider": provider.provider_for(spec).name,
+                    "provider_route": routed.name,
                     "error_type": type(exc).__name__,
                     "error": str(exc),
                 }
