@@ -34,12 +34,15 @@ clients/cnlottor_app/  # Flutter Windows / Android 客户端
 modules/               # 保留的三个上游项目，用于来源追踪和行为对照
 ```
 
-数据引擎会按彩票路由数据来源：
+数据引擎会按彩票路由数据来源，并为容易受网络策略影响的接口设置回退链：
 
-- 中国福利彩票官方接口：双色球、福彩3D、快乐8；
-- DataChart 历史页面：大乐透、排列三、7星彩。
+- 双色球、福彩3D：DataChart 历史页面，失败时回退到中福彩官方接口；
+- 大乐透、排列三、7星彩：DataChart 历史页面；
+- 快乐8：DataChart 主走势图中带 `chartBall01` 标记的真实开奖球，失败时依次尝试 917500 文本源和中福彩官方接口。
 
-同步器支持分页历史抓取、数据校验和 SQLite 去重更新。`sync --lottery all` 会逐种彩票执行；单个上游故障会写入失败报告，不会丢弃已经成功同步的其他彩票。
+DataChart 历史页面使用 `start/end/limit` 请求更完整的历史数据。快乐8原有的 `jbzs_redblue.php` 历史地址已不再使用，因为该地址当前返回 404；走势图解析只读取中奖球的 CSS 标记，不会把遗漏值误当成开奖号码。
+
+同步器支持数据校验和 SQLite 去重更新。`sync --lottery all` 会逐种彩票执行；单个上游故障会写入失败报告，不会丢弃已经成功同步的其他彩票。
 
 ## 安装服务端
 
@@ -161,7 +164,8 @@ Android 版是 API 客户端，PyTorch 训练仍由 Windows、Linux 或云端服
 
 - `CNlottor Backend CI`：Windows、Ubuntu 后端安装、CLI、API和分析测试；
 - `CNlottor PyTorch CI`：CPU PyTorch 训练、保存、加载和预测测试；
-- `CNlottor Client Build`：Flutter analyze/test，并构建 Android APK 和 Windows ZIP。
+- `CNlottor Client Build`：Flutter analyze/test，并构建 Android APK 和 Windows ZIP；
+- `CNlottor Provider Smoke`：定时访问六种彩票的真实线上来源，验证响应、解析和规则校验。
 
 ## 旧模块兼容入口
 
