@@ -4,6 +4,7 @@ from cnlottor.core import DEFAULT_REGISTRY
 from cnlottor.data_engine.providers import (
     ChinaWelfareLotteryProvider,
     CompositeLotteryProvider,
+    DataChartKl8TrendProvider,
     FallbackLotteryProvider,
     RawDraw,
     Text917500Provider,
@@ -126,6 +127,24 @@ class OfficialProviderTests(unittest.TestCase):
             page_size=30,
         ).fetch_draws(DEFAULT_REGISTRY.get("kl8"))[0]
         self.assertEqual(kl8.pools["main"], list(range(1, 21)))
+
+    def test_kl8_trend_parser_uses_ball_css_classes(self):
+        winning = {5, 10, 12, 19, 20, 26, 27, 30, 35, 38, 44, 45, 46, 47, 49, 54, 56, 61, 72, 77}
+        cells = []
+        for number in range(1, 81):
+            if number in winning:
+                cells.append(f"<td class='chartBall01'>{number}</td>")
+            else:
+                cells.append("<td class='yl01'>3</td>")
+        html = (
+            "<table><tbody id='tdata'><tr><td>2026178</td>"
+            + "".join(cells)
+            + "</tr></tbody></table>"
+        )
+        draw = DataChartKl8TrendProvider.parse_html(html)[0]
+        self.assertEqual(draw.issue, "2026178")
+        self.assertEqual(draw.pools["main"], sorted(winning))
+        self.assertEqual(draw.metadata["source_kind"], "trend-matrix")
 
     def test_917500_text_parser(self):
         text = (
