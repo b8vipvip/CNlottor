@@ -14,7 +14,7 @@ from cnlottor.analysis_engine import (
     RollingBacktester,
 )
 from cnlottor.core import DEFAULT_REGISTRY, SQLiteDrawStore
-from cnlottor.data_engine import DataChart500Provider, DataSyncService, import_legacy_csv
+from cnlottor.data_engine import DataSyncService, build_default_provider, import_legacy_csv
 from cnlottor.model_engine import TorchModelService, TrainConfig
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -124,19 +124,44 @@ def cmd_import_legacy(args: argparse.Namespace) -> int:
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
-    service = DataSyncService(_store(args.database), DataChart500Provider())
-    reports = []
+    service = DataSyncService(_store(args.database), build_default_provider())
+    reports: list[dict[str, object]] = []
+    failures = 0
     for code in _codes(args.lottery):
-        reports.append(
-            asdict(
+        try:
+            report = asdict(
                 service.sync(
                     code,
                     start_issue=args.start_issue,
                     end_issue=args.end_issue,
                 )
             )
-        )
-    _json(reports)
+            reports.append({"success": True, **report})
+        except Exception as exc:
+            failures += 1
+            reports.append(
+                {
+                    "success": False,
+                    "lottery_code": code,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
+            if args.fail_fast:
+                break
+    _json(
+        {
+            "requested": len(_codes(args.lottery)),
+            "succeeded": len(reports) - failures,
+            "failed": failures,
+            "reports": reports,
+        }
+    )
+    # A single-lottery failure remains a failing command. For `all`, partial
+    # success is returned normally so one upstream outage does not discard the
+    # data fetched for the other games.
+    if failures and (args.lottery != "all" or failures == len(reports)):
+        return 1
     return 0
 
 
@@ -296,6 +321,11 @@ def build_parser() -> argparse.ArgumentParser:
     sync_parser.add_argument("--start-issue")
     sync_parser.add_argument("--end-issue")
     sync_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
+    sync_parser.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Stop after the first provider failure",
+    )
     sync_parser.set_defaults(func=cmd_sync)
 
     analyze_parser = subparsers.add_parser(
@@ -345,7 +375,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_lottery_argument(backtest_parser)
     backtest_parser.add_argument("--database", default=str(DEFAULT_DATABASE))
-    backtest_parser.add_argument("--window", type=int, default=60)
+    backtest_parser.add_argument("--window", type=int, default=12)
     backtest_parser.add_argument("--seed", type=int, default=42)
     backtest_parser.set_defaults(func=cmd_backtest)
 
