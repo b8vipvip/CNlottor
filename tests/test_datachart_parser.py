@@ -43,6 +43,16 @@ class DataChartParserTests(unittest.TestCase):
         self.assertEqual(draw.pools["main"], [4, 5, 4, 1, 9, 9])
         self.assertEqual(draw.pools["bonus"], [14])
 
+    def test_parse_compact_qxc_main_and_two_digit_special_number(self):
+        html = """
+        <table id='tablelist'><tr>
+          <td>26008</td><td>45419914</td><td>15</td><td>7</td><td>10</td>
+        </tr></table>
+        """
+        draw = parse_datachart_html(DEFAULT_REGISTRY.get("qxc"), html)[0]
+        self.assertEqual(draw.pools["main"], [4, 5, 4, 1, 9, 9])
+        self.assertEqual(draw.pools["bonus"], [14])
+
     def test_parse_kl8_flat_history_cells(self):
         cells = "".join(f"<td>{number:02d}</td>" for number in range(1, 21))
         html = f"<tbody id='tdata'><tr><td>2026001</td>{cells}</tr></tbody>"
