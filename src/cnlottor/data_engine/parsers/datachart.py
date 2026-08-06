@@ -10,7 +10,7 @@ from cnlottor.data_engine.providers.base import RawDraw
 _DIGITS = re.compile(r"\d+")
 _ISSUE = re.compile(r"^\d{5,8}$")
 _DATE = re.compile(r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$")
-_SMALL_INTEGER = re.compile(r"^\d{1,2}$")
+_INTEGER = re.compile(r"^\d{1,3}$")
 
 
 def _text(node: object) -> str:
@@ -43,44 +43,40 @@ def _issue_index(texts: Sequence[str]) -> int | None:
     return None
 
 
-def _ordered_digits(texts: Sequence[str], count: int) -> list[int]:
-    collected: list[int] = []
+def _numeric_cells(texts: Sequence[str]) -> list[str]:
+    values: list[str] = []
     for text in texts:
         compact = _normalize(text)
-        if not compact:
-            continue
-        # History tables sometimes put the complete result in one cell.
-        if len(compact) == count and compact.isdigit():
-            return [int(char) for char in compact]
-        tokens = _DIGITS.findall(text)
-        if len(tokens) >= count and all(len(token) == 1 for token in tokens[:count]):
-            return [int(token) for token in tokens[:count]]
-        # Current trend tables place each winning digit in a separate cell,
-        # immediately after the issue column. Stop after the required count so
-        # later omission/statistical cells are never mistaken for draw digits.
-        if _SMALL_INTEGER.fullmatch(compact) and len(compact) == 1:
-            collected.append(int(compact))
-            if len(collected) == count:
-                return collected
-    return collected
+        if _INTEGER.fullmatch(compact):
+            values.append(compact)
+    return values
 
 
-def _set_numbers(texts: Sequence[str], spec: LotterySpec) -> dict[str, list[int]]:
-    required = sum(pool.draw_count for pool in spec.pools)
-    values: list[int] = []
-    for text in texts:
-        compact = _normalize(text)
-        if not _SMALL_INTEGER.fullmatch(compact):
-            continue
-        values.append(int(compact))
-        if len(values) == required:
-            break
-
-    pools: dict[str, list[int]] = {}
+def _parse_pools(texts: Sequence[str], spec: LotterySpec) -> dict[str, list[int]]:
+    cells = _numeric_cells(texts)
     cursor = 0
+    pools: dict[str, list[int]] = {}
+
     for pool in spec.pools:
-        pools[pool.code] = values[cursor : cursor + pool.draw_count]
+        if cursor >= len(cells):
+            pools[pool.code] = []
+            continue
+
+        current = cells[cursor]
+        if (
+            pool.ordered
+            and pool.maximum <= 9
+            and len(current) == pool.draw_count
+            and current.isdigit()
+        ):
+            pools[pool.code] = [int(char) for char in current]
+            cursor += 1
+            continue
+
+        values = [int(value) for value in cells[cursor : cursor + pool.draw_count]]
+        pools[pool.code] = values
         cursor += pool.draw_count
+
     return pools
 
 
@@ -113,14 +109,7 @@ def parse_datachart_html(spec: LotterySpec, html: str) -> list[RawDraw]:
         if issue_index is None:
             continue
         issue = _normalize(texts[issue_index])
-        number_texts = texts[issue_index + 1 :]
-
-        if spec.pools[0].ordered:
-            pool = spec.pools[0]
-            pools = {pool.code: _ordered_digits(number_texts, pool.draw_count)}
-        else:
-            pools = _set_numbers(number_texts, spec)
-
+        pools = _parse_pools(texts[issue_index + 1 :], spec)
         parsed.append(
             RawDraw(
                 issue=issue,
