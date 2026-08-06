@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from cnlottor.core.lottery_spec import LotterySpec
 
@@ -14,7 +14,8 @@ class HttpSettings:
     timeout: float = 20.0
     retries: int = 3
     backoff_factor: float = 0.6
-    user_agent: str = "Mozilla/5.0 CNlottor/0.2"
+    user_agent: str = "Mozilla/5.0 CNlottor/0.4"
+    history_limit: int = 5000
 
 
 class DataChart500Provider:
@@ -22,6 +23,8 @@ class DataChart500Provider:
     allowed_domains = {"datachart.500.com"}
 
     def __init__(self, settings: HttpSettings = HttpSettings()) -> None:
+        if settings.history_limit < 1:
+            raise ValueError("history_limit must be positive")
         self.settings = settings
 
     def _session(self):
@@ -52,32 +55,60 @@ class DataChart500Provider:
         response = self._session().get(
             url,
             timeout=self.settings.timeout,
-            headers={"User-Agent": self.settings.user_agent},
+            headers={
+                "User-Agent": self.settings.user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Referer": "https://datachart.500.com/",
+            },
         )
         response.raise_for_status()
-        response.encoding = "utf-8"
+        # Some DataChart endpoints declare GB2312 while others return UTF-8.
+        # Number parsing is encoding agnostic, but choosing the detected encoding
+        # preserves Chinese headers and makes diagnostics readable.
+        response.encoding = response.apparent_encoding or response.encoding or "utf-8"
         return response.text
 
-    @staticmethod
     def _history_url(
+        self,
         spec: LotterySpec,
         start_issue: str | None,
         end_issue: str | None,
+        *,
+        limit: int | None = None,
     ) -> str:
         provider_code = spec.provider_code or spec.code
         base = f"https://datachart.500.com/{provider_code}/history/"
+        count = max(1, int(limit or self.settings.history_limit))
+
+        if spec.code in {"ssq", "dlt"}:
+            path = "newinc/history.php"
+            params: dict[str, object] = {"limit": count, "sort": 1}
+            if start_issue:
+                params["start"] = start_issue
+            if end_issue:
+                params["end"] = end_issue
+            return f"{base}{path}?{urlencode(params)}"
+
         if spec.code in {"qxc", "pls", "sd"}:
             path = "inc/history.php"
-        elif spec.code == "kl8":
-            path = "newinc/jbzs_redblue.php"
-        else:
-            return f"{base}history.shtml"
+            params = {"expect": count}
+            if start_issue:
+                params["start"] = start_issue
+            if end_issue:
+                params["end"] = end_issue
+            return f"{base}{path}?{urlencode(params)}"
 
-        start = int(start_issue) if start_issue else 1
-        end = int(end_issue) if end_issue else 999999
-        if end < start:
-            raise ValueError("end_issue cannot be earlier than start_issue")
-        return f"{base}{path}?start={start}&end={end}&limit={end - start + 1}"
+        raise KeyError(
+            f"DataChart history endpoint is not configured for {spec.code}; "
+            "use the routed official provider"
+        )
+
+    @staticmethod
+    def _issue_key(issue: str) -> tuple[int, str]:
+        try:
+            return int(issue), issue
+        except ValueError:
+            return -1, issue
 
     def fetch_draws(
         self,
@@ -91,13 +122,9 @@ class DataChart500Provider:
 
     def get_latest_issue(self, spec: LotterySpec) -> str | None:
         try:
-            from bs4 import BeautifulSoup
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError(
-                "BeautifulSoup is required for online synchronization; install CNlottor with the 'data' extra"
-            ) from exc
-        html = self._get_text(self._history_url(spec, None, None))
-        soup = BeautifulSoup(html, "lxml")
-        input_id = "to" if spec.code == "kl8" else "end"
-        node = soup.find("input", id=input_id)
-        return str(node.get("value")) if node and node.get("value") else None
+            draws = self.fetch_draws(spec)
+        except (KeyError, ValueError):
+            return None
+        if not draws:
+            return None
+        return max((draw.issue for draw in draws), key=self._issue_key)
