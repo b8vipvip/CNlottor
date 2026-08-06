@@ -7,6 +7,7 @@ from cnlottor.core.lottery_spec import LotterySpec
 from .base import LotteryProvider, RawDraw
 from .cwl_official import ChinaWelfareLotteryProvider
 from .datachart500 import DataChart500Provider, HttpSettings
+from .datachart_kl8 import DataChartKl8TrendProvider
 from .text917500 import Text917500Provider
 
 
@@ -105,6 +106,7 @@ def build_default_provider(
 ) -> CompositeLotteryProvider:
     welfare = ChinaWelfareLotteryProvider(settings)
     datachart = DataChart500Provider(settings)
+    kl8_trend = DataChartKl8TrendProvider(settings)
     text917500 = Text917500Provider(settings)
     return CompositeLotteryProvider(
         {
@@ -112,7 +114,7 @@ def build_default_provider(
             # official source remains a fallback when DataChart is unavailable.
             "ssq": FallbackLotteryProvider((datachart, welfare)),
             "sd": FallbackLotteryProvider((datachart, welfare)),
-            "kl8": FallbackLotteryProvider((text917500, welfare)),
+            "kl8": FallbackLotteryProvider((kl8_trend, text917500, welfare)),
             "dlt": datachart,
             "pls": datachart,
             "qxc": datachart,
