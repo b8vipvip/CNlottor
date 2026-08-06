@@ -15,7 +15,7 @@ class HttpSettings:
     retries: int = 3
     backoff_factor: float = 0.6
     user_agent: str = "Mozilla/5.0 CNlottor/0.4"
-    history_limit: int = 5000
+    history_limit: int = 10000
 
 
 class DataChart500Provider:
@@ -59,12 +59,10 @@ class DataChart500Provider:
                 "User-Agent": self.settings.user_agent,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Referer": "https://datachart.500.com/",
+                "Accept-Language": "zh-CN,zh;q=0.9",
             },
         )
         response.raise_for_status()
-        # Some DataChart endpoints declare GB2312 while others return UTF-8.
-        # Number parsing is encoding agnostic, but choosing the detected encoding
-        # preserves Chinese headers and makes diagnostics readable.
         response.encoding = response.apparent_encoding or response.encoding or "utf-8"
         return response.text
 
@@ -79,29 +77,27 @@ class DataChart500Provider:
         provider_code = spec.provider_code or spec.code
         base = f"https://datachart.500.com/{provider_code}/history/"
         count = max(1, int(limit or self.settings.history_limit))
+        start = start_issue or "1"
+        end = end_issue or "99999999"
 
         if spec.code in {"ssq", "dlt"}:
             path = "newinc/history.php"
-            params: dict[str, object] = {"limit": count, "sort": 1}
-            if start_issue:
-                params["start"] = start_issue
-            if end_issue:
-                params["end"] = end_issue
-            return f"{base}{path}?{urlencode(params)}"
-
-        if spec.code in {"qxc", "pls", "sd"}:
+        elif spec.code in {"qxc", "pls", "sd"}:
             path = "inc/history.php"
-            params = {"expect": count}
-            if start_issue:
-                params["start"] = start_issue
-            if end_issue:
-                params["end"] = end_issue
-            return f"{base}{path}?{urlencode(params)}"
+        else:
+            raise KeyError(
+                f"DataChart history endpoint is not configured for {spec.code}; "
+                "use the routed provider"
+            )
 
-        raise KeyError(
-            f"DataChart history endpoint is not configured for {spec.code}; "
-            "use the routed official provider"
-        )
+        params: dict[str, object] = {
+            "start": start,
+            "end": end,
+            "limit": count,
+        }
+        if spec.code in {"ssq", "dlt"}:
+            params["sort"] = 1
+        return f"{base}{path}?{urlencode(params)}"
 
     @staticmethod
     def _issue_key(issue: str) -> tuple[int, str]:
