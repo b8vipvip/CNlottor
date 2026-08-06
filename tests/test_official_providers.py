@@ -4,7 +4,9 @@ from cnlottor.core import DEFAULT_REGISTRY
 from cnlottor.data_engine.providers import (
     ChinaWelfareLotteryProvider,
     CompositeLotteryProvider,
+    FallbackLotteryProvider,
     RawDraw,
+    Text917500Provider,
 )
 
 
@@ -40,20 +42,45 @@ class StaticProvider:
         return self.issue
 
 
+class FailingProvider:
+    name = "failing"
+
+    def fetch_draws(self, spec, *, start_issue=None, end_issue=None):
+        raise RuntimeError("simulated outage")
+
+    def get_latest_issue(self, spec):
+        raise RuntimeError("simulated outage")
+
+
 class OfficialProviderTests(unittest.TestCase):
     def test_cwl_parses_ssq_and_paginates(self):
         provider = StubCwlProvider(
             [
                 {
                     "result": [
-                        {"code": "2026002", "date": "2026-01-04(日)", "red": "01,02,03,04,05,06", "blue": "16"},
-                        {"code": "2026001", "date": "2026-01-01", "red": "07,08,09,10,11,12", "blue": "01"},
+                        {
+                            "code": "2026002",
+                            "date": "2026-01-04(日)",
+                            "red": "01,02,03,04,05,06",
+                            "blue": "16",
+                        },
+                        {
+                            "code": "2026001",
+                            "date": "2026-01-01",
+                            "red": "07,08,09,10,11,12",
+                            "blue": "01",
+                        },
                     ],
                     "pageCount": 2,
                 },
                 {
                     "result": [
-                        {"code": "2025001", "date": "2025-01-01", "red": "13,14,15,16,17,18", "blue": "02"},
+                        {
+                            "code": "2025001",
+                            "date": "2025-01-01",
+                            "red": "13,14,15,16,17,18",
+                            "blue": "02",
+                        },
                     ],
                     "pageCount": 2,
                 },
@@ -68,24 +95,60 @@ class OfficialProviderTests(unittest.TestCase):
 
     def test_cwl_parses_sd_and_kl8(self):
         sd = StubCwlProvider(
-            [{"result": [{"code": "2026001", "date": "2026-01-01", "red": "3,8,3"}]}],
+            [
+                {
+                    "result": [
+                        {
+                            "code": "2026001",
+                            "date": "2026-01-01",
+                            "red": "3,8,3",
+                        }
+                    ]
+                }
+            ],
             page_size=30,
         ).fetch_draws(DEFAULT_REGISTRY.get("sd"))[0]
         self.assertEqual(sd.pools["digits"], [3, 8, 3])
 
         kl8_numbers = ",".join(f"{number:02d}" for number in range(1, 21))
         kl8 = StubCwlProvider(
-            [{"result": [{"code": "2026001", "date": "2026-01-01", "red": kl8_numbers}]}],
+            [
+                {
+                    "result": [
+                        {
+                            "code": "2026001",
+                            "date": "2026-01-01",
+                            "red": kl8_numbers,
+                        }
+                    ]
+                }
+            ],
             page_size=30,
         ).fetch_draws(DEFAULT_REGISTRY.get("kl8"))[0]
         self.assertEqual(kl8.pools["main"], list(range(1, 21)))
 
+    def test_917500_text_parser(self):
+        text = (
+            "2026001 "
+            + " ".join(f"{number:02d}" for number in range(1, 21))
+            + ",metadata\n"
+        )
+        draw = Text917500Provider.parse_text(text)[0]
+        self.assertEqual(draw.issue, "2026001")
+        self.assertEqual(draw.pools["main"], list(range(1, 21)))
+        self.assertEqual(draw.metadata["order"], "draw-order")
+
+    def test_fallback_uses_second_provider(self):
+        provider = FallbackLotteryProvider(
+            (FailingProvider(), StaticProvider("2026001"))
+        )
+        draw = provider.fetch_draws(DEFAULT_REGISTRY.get("ssq"))[0]
+        self.assertEqual(draw.issue, "2026001")
+
     def test_composite_routes_by_lottery_code(self):
         welfare = StaticProvider("2026001")
         sports = StaticProvider("26001")
-        provider = CompositeLotteryProvider(
-            {"ssq": welfare, "dlt": sports}
-        )
+        provider = CompositeLotteryProvider({"ssq": welfare, "dlt": sports})
         self.assertEqual(
             provider.fetch_draws(DEFAULT_REGISTRY.get("ssq"))[0].issue,
             "2026001",
