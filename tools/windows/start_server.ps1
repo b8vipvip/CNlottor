@@ -72,7 +72,9 @@ if (-not (Test-Path $Python)) {
     }
 
     Write-Host "[CNlottor] 正在使用兼容的 Python 创建虚拟环境……"
-    & $Launcher.Command @($Launcher.Arguments) -m venv $Venv
+    $LauncherCommand = [string]$Launcher.Command
+    $LauncherArguments = [string[]]$Launcher.Arguments
+    & $LauncherCommand @LauncherArguments -m venv $Venv
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Python)) {
         throw "创建虚拟环境失败。"
     }
