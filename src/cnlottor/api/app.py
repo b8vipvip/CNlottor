@@ -11,45 +11,85 @@ from pydantic import BaseModel, Field
 from cnlottor.analysis_engine import AssociationRuleAnalyzer, GenericCopulaGenerator, RollingBacktester
 from cnlottor.analysis_engine.service import AnalysisService
 from cnlottor.core import DEFAULT_REGISTRY, SQLiteDrawStore
-from cnlottor.data_engine import DataChart500Provider, DataSyncService
+from cnlottor.data_engine import DataSyncService, LotteryProvider, build_default_provider
 from cnlottor.model_engine import TorchModelService, TrainConfig, TorchUnavailableError
 
 
 class TrainRequest(BaseModel):
     window_size: int = Field(default=12, ge=1)
-    epochs: int = Field(default=20, ge=1, le=500)
-    hidden_size: int = Field(default=64, ge=4, le=1024)
+    epochs: int = Field(default=3, ge=1, le=500)
+    hidden_size: int = Field(default=32, ge=4, le=1024)
     learning_rate: float = Field(default=1e-3, gt=0)
 
 
-def create_app(database: str | Path | None = None, artifacts_root: str | Path | None = None) -> FastAPI:
+def create_app(
+    database: str | Path | None = None,
+    artifacts_root: str | Path | None = None,
+    provider: LotteryProvider | None = None,
+) -> FastAPI:
     db = Path(database or os.getenv("CNLOTTOR_DATABASE", "data/cnlottor.db"))
     models = Path(artifacts_root or os.getenv("CNLOTTOR_MODELS", "artifacts/models"))
     store = SQLiteDrawStore(db)
     model_service = TorchModelService(models)
-    application = FastAPI(title="CNlottor API", version="0.3.0")
-    application.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    data_provider = provider or build_default_provider()
+    application = FastAPI(title="CNlottor API", version="0.4.0")
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @application.get("/health")
     def health():
-        return {"status": "ok", "version": "0.3.0", "database": str(db)}
+        return {"status": "ok", "version": "0.4.0", "database": str(db)}
 
     @application.get("/lotteries")
     def lotteries():
         return [
-            {"code": spec.code, "name": spec.name, "pools": [asdict(pool) for pool in spec.pools]}
+            {
+                "code": spec.code,
+                "name": spec.name,
+                "pools": [asdict(pool) for pool in spec.pools],
+            }
             for spec in DEFAULT_REGISTRY.all()
         ]
+
+    @application.get("/status/{lottery_code}")
+    def status(lottery_code: str):
+        spec = DEFAULT_REGISTRY.get(lottery_code)
+        history = store.load_draws(spec.code, ascending=True)
+        checkpoint = models / spec.code / "latest.pt"
+        return {
+            "lottery_code": spec.code,
+            "lottery_name": spec.name,
+            "draw_count": len(history),
+            "latest_issue": history[-1].issue if history else None,
+            "model_ready": checkpoint.exists(),
+            "checkpoint": str(checkpoint),
+        }
 
     @application.get("/draws/{lottery_code}")
     def draws(lottery_code: str, limit: int = Query(default=100, ge=1, le=5000)):
         spec = DEFAULT_REGISTRY.get(lottery_code)
-        return [asdict(draw) for draw in store.load_draws(spec.code, limit=limit, ascending=False)]
+        return [
+            asdict(draw)
+            for draw in store.load_draws(spec.code, limit=limit, ascending=False)
+        ]
 
     @application.post("/sync/{lottery_code}")
-    def sync(lottery_code: str):
+    def sync(
+        lottery_code: str,
+        start_issue: str | None = None,
+        end_issue: str | None = None,
+    ):
         try:
-            return asdict(DataSyncService(store, DataChart500Provider()).sync(lottery_code))
+            report = DataSyncService(store, data_provider).sync(
+                lottery_code,
+                start_issue=start_issue,
+                end_issue=end_issue,
+            )
+            return {"success": True, **asdict(report)}
         except Exception as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -75,12 +115,16 @@ def create_app(database: str | Path | None = None, artifacts_root: str | Path | 
         spec = DEFAULT_REGISTRY.get(lottery_code)
         history = store.load_draws(spec.code, ascending=True)
         try:
-            report = model_service.train(spec, history, TrainConfig(
-                window_size=request.window_size,
-                epochs=request.epochs,
-                hidden_size=request.hidden_size,
-                learning_rate=request.learning_rate,
-            ))
+            report = model_service.train(
+                spec,
+                history,
+                TrainConfig(
+                    window_size=request.window_size,
+                    epochs=request.epochs,
+                    hidden_size=request.hidden_size,
+                    learning_rate=request.learning_rate,
+                ),
+            )
             return asdict(report)
         except TorchUnavailableError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -101,7 +145,7 @@ def create_app(database: str | Path | None = None, artifacts_root: str | Path | 
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @application.get("/backtest/{lottery_code}")
-    def backtest(lottery_code: str, window: int = Query(default=60, ge=5)):
+    def backtest(lottery_code: str, window: int = Query(default=12, ge=5)):
         spec = DEFAULT_REGISTRY.get(lottery_code)
         history = store.load_draws(spec.code, ascending=True)
         try:
