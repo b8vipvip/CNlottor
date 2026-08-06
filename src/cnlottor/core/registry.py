@@ -61,7 +61,8 @@ BUILTIN_SPECS: tuple[LotterySpec, ...] = (
         name="七星彩",
         provider_code="qxc",
         pools=(
-            _pool("digits", 0, 9, 7, ordered=True, unique=False, name="开奖号码"),
+            _pool("main", 0, 9, 6, ordered=True, unique=False, name="基本号码"),
+            _pool("bonus", 0, 14, 1, name="特别号码"),
         ),
     ),
     LotterySpec(
