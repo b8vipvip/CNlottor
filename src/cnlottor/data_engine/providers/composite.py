@@ -1,12 +1,61 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from cnlottor.core.lottery_spec import LotterySpec
 
 from .base import LotteryProvider, RawDraw
 from .cwl_official import ChinaWelfareLotteryProvider
 from .datachart500 import DataChart500Provider, HttpSettings
+from .text917500 import Text917500Provider
+
+
+class FallbackLotteryProvider:
+    """Try providers in order and preserve diagnostics from every failure."""
+
+    def __init__(self, providers: Sequence[LotteryProvider]) -> None:
+        if not providers:
+            raise ValueError("at least one fallback provider is required")
+        self.providers = tuple(providers)
+        self.name = " -> ".join(provider.name for provider in self.providers)
+
+    def fetch_draws(
+        self,
+        spec: LotterySpec,
+        *,
+        start_issue: str | None = None,
+        end_issue: str | None = None,
+    ) -> list[RawDraw]:
+        failures = []
+        for provider in self.providers:
+            try:
+                draws = list(
+                    provider.fetch_draws(
+                        spec,
+                        start_issue=start_issue,
+                        end_issue=end_issue,
+                    )
+                )
+                if draws:
+                    return draws
+                failures.append(f"{provider.name}: no draws returned")
+            except Exception as exc:
+                failures.append(
+                    f"{provider.name}: {type(exc).__name__}: {exc}"
+                )
+        raise RuntimeError(
+            f"all providers failed for {spec.code}: " + " | ".join(failures)
+        )
+
+    def get_latest_issue(self, spec: LotterySpec) -> str | None:
+        for provider in self.providers:
+            try:
+                issue = provider.get_latest_issue(spec)
+                if issue:
+                    return issue
+            except Exception:
+                continue
+        return None
 
 
 class CompositeLotteryProvider:
@@ -56,11 +105,14 @@ def build_default_provider(
 ) -> CompositeLotteryProvider:
     welfare = ChinaWelfareLotteryProvider(settings)
     datachart = DataChart500Provider(settings)
+    text917500 = Text917500Provider(settings)
     return CompositeLotteryProvider(
         {
-            "ssq": welfare,
-            "sd": welfare,
-            "kl8": welfare,
+            # DataChart is reachable from common desktop and CI networks. The
+            # official source remains a fallback when DataChart is unavailable.
+            "ssq": FallbackLotteryProvider((datachart, welfare)),
+            "sd": FallbackLotteryProvider((datachart, welfare)),
+            "kl8": FallbackLotteryProvider((text917500, welfare)),
             "dlt": datachart,
             "pls": datachart,
             "qxc": datachart,
