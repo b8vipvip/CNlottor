@@ -13,12 +13,13 @@ class WindowsBundleTests(unittest.TestCase):
         self.assertIn('Arguments = @("-3.12")', script)
         self.assertIn('Arguments = @("-3.11")', script)
         self.assertIn('Arguments = @("-3.10")', script)
-        self.assertIn('"artifacts\\models"', script)
-        self.assertIn('"data\\cnlottor.db"', script)
+        self.assertIn('$DataDirectory = Join-Path $Root "data"', script)
+        self.assertIn('$Database = Join-Path $DataDirectory "cnlottor.db"', script)
+        self.assertIn('$ModelsDirectory = Join-Path $Root "artifacts\\models"', script)
         self.assertIn("--database $Database", script)
         self.assertIn("--models $ModelsDirectory", script)
         self.assertIn('server\\cnlottor-*.whl', script)
-        self.assertNotIn('pip install -e ".[all]"\n          ', script)
+        self.assertIn('$WheelWithExtras = "{0}[all]" -f $Wheel.FullName', script)
 
     def test_client_workflow_copies_tested_launcher_without_nested_zip(self):
         workflow = (
