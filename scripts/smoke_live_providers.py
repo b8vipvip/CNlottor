@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
+import cnlottor
 from cnlottor.core import DEFAULT_REGISTRY
 from cnlottor.data_engine import (
     HttpSettings,
@@ -11,8 +12,15 @@ from cnlottor.data_engine import (
     validate_draw_sequence,
 )
 
+EXPECTED_RELEASE = "0.4.0"
+
 
 def main() -> int:
+    if cnlottor.__version__ != EXPECTED_RELEASE:
+        raise RuntimeError(
+            f"provider smoke expected {EXPECTED_RELEASE}, got {cnlottor.__version__}"
+        )
+
     settings = HttpSettings(timeout=30, retries=2, history_limit=5)
     provider = build_default_provider(settings)
 
@@ -49,6 +57,7 @@ def main() -> int:
     print(
         json.dumps(
             {
+                "release": cnlottor.__version__,
                 "success": not failures,
                 "reports": reports,
                 "failures": failures,

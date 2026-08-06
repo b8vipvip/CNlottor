@@ -49,6 +49,7 @@ class TorchModelServiceTests(unittest.TestCase):
                 )
                 self.assertTrue(Path(report.checkpoint).exists())
                 prediction = service.predict(spec, draws)
+                self.assertEqual(prediction.model_version, "0.4.0")
                 for pool in spec.pools:
                     pool.validate_numbers(prediction.pools[pool.code])
 

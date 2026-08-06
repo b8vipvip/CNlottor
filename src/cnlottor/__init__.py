@@ -2,7 +2,7 @@
 
 from .core import DEFAULT_REGISTRY, LotteryDraw, LotteryRegistry, LotterySpec, SQLiteDrawStore
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "DEFAULT_REGISTRY",
@@ -10,4 +10,5 @@ __all__ = [
     "LotteryRegistry",
     "LotterySpec",
     "SQLiteDrawStore",
+    "__version__",
 ]
