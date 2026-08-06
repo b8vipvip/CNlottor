@@ -5,6 +5,7 @@ on:
     paths:
       - "clients/cnlottor_app/**"
       - "src/cnlottor/**"
+      - "tools/windows/**"
       - "pyproject.toml"
       - ".github/workflows/client-build.yml"
   push:
@@ -12,6 +13,7 @@ on:
     paths:
       - "clients/cnlottor_app/**"
       - "src/cnlottor/**"
+      - "tools/windows/**"
       - "pyproject.toml"
       - ".github/workflows/client-build.yml"
   workflow_dispatch:
@@ -60,6 +62,20 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Validate PowerShell launcher syntax
+        shell: pwsh
+        run: |
+          $Tokens = $null
+          $Errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "tools\windows\start_server.ps1"),
+            [ref]$Tokens,
+            [ref]$Errors
+          ) | Out-Null
+          if ($Errors.Count -gt 0) {
+            $Errors | ForEach-Object { Write-Error $_.Message }
+            throw "PowerShell launcher contains syntax errors."
+          }
       - name: Enable Windows desktop
         run: flutter config --enable-windows-desktop
       - name: Resolve Flutter packages
@@ -84,28 +100,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path package\server | Out-Null
           Copy-Item -Recurse -Force clients\cnlottor_app\build\windows\x64\runner\Release\* package\app\
           Copy-Item -Force dist\*.whl package\server\
-          Copy-Item -Force README.md package\README.md
-          @'
-          $ErrorActionPreference = "Stop"
-          $Root = $PSScriptRoot
-          $Python = Join-Path $Root ".venv\Scripts\python.exe"
-          if (-not (Test-Path $Python)) {
-              py -3.11 -m venv (Join-Path $Root ".venv")
-          }
-          $Wheel = (Get-ChildItem (Join-Path $Root "server\cnlottor-*.whl") | Select-Object -First 1).FullName
-          & $Python -m pip install --upgrade pip
-          & $Python -m pip install "${Wheel}[all]"
-          & $Python -m cnlottor.cli serve --host 0.0.0.0 --port 8000
-          '@ | Set-Content -Encoding UTF8 package\start_server.ps1
-          @'
-          1. Install Python 3.11 if it is not already installed.
-          2. Right-click start_server.ps1 and run with PowerShell.
-          3. Start app\cnlottor_app.exe.
-          4. The default API address is http://127.0.0.1:8000.
-          '@ | Set-Content -Encoding UTF8 package\使用说明.txt
-          Compress-Archive -Path package\* -DestinationPath CNlottor-Windows.zip -Force
+          Copy-Item -Force tools\windows\start_server.ps1 package\start_server.ps1
+          Copy-Item -Force tools\windows\使用说明.txt package\使用说明.txt
+          Copy-Item -Force README.md package\项目完整说明.md
+          New-Item -ItemType Directory -Force -Path package\data | Out-Null
+          New-Item -ItemType Directory -Force -Path package\artifacts\models | Out-Null
       - uses: actions/upload-artifact@v4
         with:
           name: CNlottor-Windows
-          path: CNlottor-Windows.zip
+          path: package
           if-no-files-found: error
